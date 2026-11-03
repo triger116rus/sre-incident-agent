@@ -38,7 +38,7 @@ def static_check(snippet: str) -> None:
     m = FORBIDDEN.search(snippet)
     if m:
         raise SandboxedViolation(
-            f"запрещённая конструкция в сниппете: {m.group(0)!r} — не запускаю"
+            f"forbidden construct in snippet: {m.group(0)!r} — refusing to run"
         )
 
 
