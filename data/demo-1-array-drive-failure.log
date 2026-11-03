@@ -1,0 +1,25 @@
+# SYNTHETIC DEMO LOG — storage array controller event log (anonymized)
+# Scenario: drive 14 in enclosure 0 fails; VDISK-3 degrades; copyback starts; later fails again
+2026-10-14T02:11:03+03:00 array-demo0 controller B audit[812]: SNMP trap sent: eventCode=DRIVE_FAILURE, drive=14, enc=0
+2026-10-14T02:11:04+03:00 array-demo0 controller B vdisk[3]: member drive 14 (enc0:14, SAS, 8TB) transitioned to FAILED
+2026-10-14T02:11:04+03:00 array-demo0 controller B vdisk[3]: VDISK state ONLINE -> FTDEGRADED (2 spare groups available)
+2026-10-14T02:11:05+03:00 array-demo0 controller B event: PDEV_FAILED, loc=c0e14, healthImpact=degraded
+2026-10-14T02:11:07+03:00 array-demo0 controller B smis: alarm raised severity=CRITICAL id=10024
+2026-10-14T02:14:41+03:00 array-demo0 controller B vdisk[3]: initiating copyback enc0:14 -> global spare enc0:58
+2026-10-14T02:14:42+03:00 array-demo0 controller B task[4001]: COPYBACK started, priority=low, est=4h10m
+2026-10-14T05:52:19+03:00 array-demo0 controller B io[0]: retry count exceeded on vdisk3 LUN 17, iostats: avgsvc=118ms maxsvc=2100ms
+2026-10-14T05:52:20+03:00 array-demo0 controller B host[2]: path failover triggered, initiator 20:00:...:a1 lunmask ok
+2026-10-14T06:03:55+03:00 array-demo0 controller A audit[812]: drive 14 (enc0:14) reinserted/detected state=REINTEGRATING
+2026-10-14T06:03:56+03:00 array-demo0 controller A vdisk[3]: drive enc0:14 media errors 4124, SMART: reallocated sectors 3891 rising
+2026-10-14T06:03:57+03:00 array-demo0 controller A event: PDEV_MARGIN, drive=14, margin=below-threshold
+2026-10-14T06:07:22+03:00 array-demo0 controller B task[4001]: COPYBACK FAILED at 62% (source drive unreachable), task retry 1
+2026-10-14T06:07:23+03:00 array-demo0 controller B vdisk[3]: copyback src enc0:14 timed out (SCSI timeout 60s)
+2026-10-14T06:41:10+03:00 array-demo0 controller A audit: host port 0:1 flapped 3 times in 5m (link reset loop suspected)
+2026-10-14T07:12:44+03:00 array-demo0 controller B cli: show vdisk 3 -> state=FTDEGRADED, members 11/12 OK
+2026-10-14T08:02:31+03:00 array-demo0 controller A monitor: enclosure 0 temp 41C, PSU-A ok, PSU-B ok
+2026-10-14T09:15:02+03:00 array-demo0 controller B event: DRIVE_REPLACEMENT_REQUEST pending for enc0:14
+2026-10-14T11:26:48+03:00 array-demo0 controller B vdisk[3]: copyback retry 2 started enc0:14 -> enc0:58
+2026-10-14T13:40:12+03:00 array-demo0 controller B task[4001]: COPYBACK completed 100%, vdisk3 reconstruct OK
+2026-10-14T13:40:13+03:00 array-demo0 controller B vdisk[3]: state FTDEGRADED -> ONLINE
+2026-10-14T13:40:15+03:00 array-demo0 controller B audit: SNMP trap cleared: eventCode=DRIVE_FAILURE resolved
+2026-10-14T14:02:09+03:00 array-demo0 controller A drive 14: SMART offline tests recommended; drive marked DO_NOT_USE

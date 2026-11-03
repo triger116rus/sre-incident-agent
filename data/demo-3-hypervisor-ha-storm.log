@@ -1,0 +1,21 @@
+# SYNTHETIC DEMO LOG — hypervisor / cluster alerts (anonymized)
+# Scenario: storage latency spike cascades; VM HA restart storm on a host
+2026-11-01T21:04:12+03:00 cluster-ctx vpxd[3012]: Alarm 'Datastore Latency' on ds-demo-lun07: latency=47ms (threshold 30ms), count=12
+2026-11-01T21:04:13+03:00 cluster-ctx hostagent[hv-demo04]: vmx| guest=vm-web-17 device=lsilogicsas: queue depth 32 exceeded, lat_starved=true
+2026-11-01T21:05:40+03:00 cluster-ctx hostagent[hv-demo04]: vmkevent: DRS unable to balance, datastore contention on ds-demo-lun07
+2026-11-01T21:11:02+03:00 cluster-ctx vpxd[3012]: Alarm 'Datastore Latency' on ds-demo-lun07: latency=91ms, count=31
+2026-11-01T21:17:55+03:00 cluster-ctx hostagent[hv-demo04]: vmnic2 link down, 1000ms later up (flap detected, 4 events in 120s)
+2026-11-01T21:18:01+03:00 cluster-ctx hostagent[hv-demo04]: vob: ha hostmonitor: host hv-demo04 changed state: red
+2026-11-01T21:18:03+03:00 cluster-ctx vpxd[3012]: Host hv-demo04 in cluster demo-cl1 has failed
+2026-11-01T21:18:04+03:00 cluster-ctx vpxd[3012]: Marking HP on host hv-demo04; will start HA tasks in 30s
+2026-11-01T21:18:35+03:00 cluster-ctx vpxd[3012]: Admitting VMs on hosts; total admissions count 0
+2026-11-01T21:18:41+03:00 cluster-ctx hostagent[hv-demo02]: HA started restart of 14 VMs (failover from hv-demo04)
+2026-11-01T21:19:12+03:00 cluster-ctx hostagent[hv-demo02]: WARNING: admission slot check failed on vm-web-17: slot size 2.4GB, available 1.1GB
+2026-11-01T21:19:13+03:00 cluster-ctx hostagent[hv-demo02]: WARNING: admission slot check failed on vm-web-18: slot size 2.4GB, available 1.1GB
+2026-11-01T21:20:44+03:00 cluster-ctx hostagent[hv-demo02]: HA restart storm detected: 14 attempts, 5 failed admission
+2026-11-01T21:22:01+03:00 cluster-ctx vpxd[3012]: Alarm 'HA VM reset storm' eventcount=5
+2026-11-01T21:31:18+03:00 cluster-ctx hostagent[hv-demo04]: vmnic2 stable since 21:29; physical switch port counters reset 0
+2026-11-01T21:31:19+03:00 cluster-ctx hostagent[hv-demo04]: host left quarantine, state=green
+2026-11-01T21:40:26+03:00 cluster-ctx vpxd[3012]: HA tasks complete: 9 restarted, 5 pending slot space
+2026-11-01T22:05:57+03:00 cluster-ctx vpxd[3012]: ds-demo-lun07 latency back to 8ms avg (array-side queue flush)
+2026-11-01T22:06:02+03:00 cluster-ctx arrayside array-demo0: event PATH_FLAP detected on host port 0:1 during 21:17-21:31 window

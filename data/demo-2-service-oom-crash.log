@@ -1,0 +1,32 @@
+# SYNTHETIC DEMO LOG — service crash dump excerpt (anonymized)
+# Scenario: backend service crashes under load; pattern: heap exhaustion after leak, OOM killer + core snippet
+Nov  3 01:14:07 host-a01 systemd[1]: svc-ingest.service: A process of this unit has been killed by the OOM killer.
+Nov  3 01:14:07 host-a01 kernel: [ 88421.314] oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=svc-ingest,mems_allowed=0
+Nov  3 01:14:07 host-a01 kernel: [ 88421.317] Out of memory: Killed process 19124 (python3) total-vm:9874216kB, anon-rss:3982100kB
+Nov  3 01:14:08 host-a01 systemd[1]: svc-ingest.service: Main process exited, code=killed, status=9/KILL
+Nov  3 01:14:08 host-a01 systemd[1]: svc-ingest.service: Failed with result 'oom-kill'.
+Nov  3 01:14:10 host-a01 systemd[1]: svc-ingest.service: Scheduled restart job, restart counter is at 4.
+Nov  3 01:14:40 host-a01 python3[19431]: [ingest] worker up, queue depth=0, cache_slots=512
+Nov  3 01:40:55 host-a01 python3[19431]: [ingest] WARN cache eviction slow: 1421 evictions in 60s, hit-ratio 0.11
+Nov  3 02:10:33 host-a01 python3[19431]: [ingest] WARN cache eviction slow: 3880 evictions in 60s, hit-ratio 0.05
+Nov  3 02:41:12 host-a01 python3[19431]: [ingest] WARN rss growth: rss=2.31G, growth rate +212MB/10min
+Nov  3 03:44:01 host-a01 python3[19518]: [ingest] WARN rss growth: rss=3.87G, growth rate +318MB/10min
+Nov  3 04:57:26 host-a01 kernel: [120311.902] svc-ingest invoked oom-killer: gfp_mask=0xd2, order=-1, oom_score_adj=0
+Nov  3 04:57:26 host-a01 kernel: [120311.910] Task in /system.slice/svc-ingest.service killed as a result of limit of /system.slice/svc-ingest.service
+Nov  3 04:57:26 host-a01 kernel: [120311.915] memory: usage 4126MB, limit 4096MB, failcnt 2171
+Nov  3 04:57:27 host-a01 systemd[1]: svc-ingest.service: Main process exited, code=killed, status=9/KILL
+Nov  3 04:57:27 host-a01 systemd[1]: svc-ingest.service: Failed with result 'oom-kill'.
+Nov  3 06:01:44 host-a01 python3[19712]: [ingest] worker up, queue depth=0
+Nov  3 06:35:02 host-a01 python3[19712]: [ingest] WARN cache eviction slow: 205 evictions in 60s
+Nov  3 07:23:19 host-a01 python3[19712]: [ingest] WARN cache eviction slow: 402 evictions in 60s, hit-ratio 0.09
+-- crash core summary (excerpt) --
+Process:          python3 (svc-ingest worker)
+Signal:           SIGKILL (external, oom-killer)
+Uptime at crash:  3h 41m
+RSS at peak:      4.03 GB / cgroup limit 4.00 GB
+Top allocation sites (heap profile, sampled):
+  0x4f1a2c  object_cache_create_slot     61.2%
+  0x4f2074  blob_deser_realloc          18.9%
+  0x40b1e0  json_decode_workspace        9.4%
+Distinct patterns: cache slots created: 1_142_003; freed: 214; leak rate ~= slot retention without eviction callback
+Suggested anchor in source: cache eviction path missing on slot reuse (see cache_slots config)
