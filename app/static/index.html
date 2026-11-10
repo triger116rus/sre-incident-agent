@@ -5,64 +5,134 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SRE Incident Agent — Blast Radius Zero</title>
 <style>
-  :root { --bg:#0b1220; --panel:#121b2e; --line:#243252; --ink:#dbe4f5; --mut:#8194b8; --acc:#5b8cff; --ok:#3fd68c; --bad:#ef6461; }
+  :root { --bg:#0b1220; --panel:#121b2e; --line:#243252; --ink:#dbe4f5; --mut:#8194b8; --acc:#5b8cff; --ok:#3fd68c; --bad:#ef6461; --warn:#f0b429; }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--ink); font:14px/1.5 "Segoe UI",system-ui,sans-serif; padding:24px; max-width:980px; margin:0 auto; }
   h1 { font-size:20px; margin-bottom:2px; }
-  .sub { color:var(--mut); margin-bottom:20px; }
+  .sub { color:var(--mut); margin-bottom:14px; }
   .sub b { color:var(--acc); }
   textarea { width:100%; height:150px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:12px; font:13px Consolas,monospace; }
   button { background:var(--acc); border:0; color:#fff; font-weight:600; padding:10px 18px; border-radius:8px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
-  .row { margin:10px 0 22px; display:flex; gap:10px; }
+  button.reject { background:#6b2d2b; }
+  button.ghost { background:var(--panel); border:1px solid var(--line); color:var(--acc); }
+  .row { margin:10px 0 12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .mode { display:flex; align-items:center; gap:6px; color:var(--mut); font-size:12px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:14px; display:flex; gap:22px; align-items:center; flex-wrap:wrap; }
+  .panel .big { font-size:22px; font-weight:800; color:var(--ok); }
+  .panel .lbl { color:var(--mut); font-size:12px; }
+  .panel .num { color:var(--warn); font-weight:700; }
   .step { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
   .step h3 { font-size:13px; color:var(--acc); margin-bottom:6px; }
+  .approve { background:#0d2b46; border:1px solid var(--acc); }
+  .approve h3 { color:var(--ink); }
+  .approve .btns { display:flex; gap:10px; margin-top:10px; }
   .badge { display:inline-block; font-size:11px; font-weight:700; padding:1px 8px; border-radius:20px; margin-left:8px; vertical-align:1px; }
   .ok { background:#123326; color:var(--ok); } .bad { background:#3a1416; color:var(--bad); }
+  .warn { background:#3a2f14; color:var(--warn); }
   pre { white-space:pre-wrap; font:12px Consolas,monospace; color:var(--mut); max-height:220px; overflow:auto; background:#0d1526; padding:8px; border-radius:6px; }
   details summary { cursor:pointer; color:var(--mut); font-size:12px; margin-top:6px; }
   .rep h3 { font-size:14px; margin:10px 0 4px; }
   ul { margin:0 0 8px 20px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; color:var(--mut); }
+  td, th { padding:3px 8px; border-bottom:1px solid var(--line); text-align:left; }
 </style>
 </head>
 <body>
 <h1>SRE Incident Agent — Blast Radius Zero</h1>
 <p class="sub">Alert/log in → LLM plans a diagnostic snippet (<b>Vultr Serverless Inference</b>) →
-snippet runs in an <b>isolated Docker sandbox</b> (no network, no secrets, mem/cpu/pids caps, destroyed after each run)
-→ verified output feeds the agent → triage report. Every blocked snippet is shown as <b>BLOCKED</b> — containment is visible.</p>
+snippet runs in an <b>isolated Docker sandbox</b> (no network, no secrets, mem/cpu/pids caps, destroyed after each run,
+<b>runtime audit</b> + canary traps) → verified output feeds the agent → triage report.
+Every blocked attempt is shown — <b>containment is measured, not promised</b>.</p>
+<div class="panel" id="cpanel">
+  <div><div class="lbl">CONTAINMENT TESTS</div><div class="big" id="cp-main">—</div></div>
+  <div><div class="lbl">runs / blocked (guard) / rejected</div>
+    <div><span class="num" id="cp-runs">0</span> / <span class="num" id="cp-guard">0</span> / <span class="num" id="cp-rej">0</span></div></div>
+  <div><div class="lbl">egress attempts caught</div>
+    <div><span class="num" id="cp-caught">0</span></div></div>
+  <div><div class="lbl">escapes (canary secrets leaked)</div>
+    <div><span id="cp-esc" style="color:var(--ok);font-weight:700">0</span></div></div>
+  <div style="margin-left:auto"><button id="selftest" class="ghost">Run containment self-test</button></div>
+</div>
+<div id="selftest-out" style="display:none;margin-bottom:14px"></div>
 <textarea id="t" placeholder="Paste an alert / log excerpt here…"></textarea>
-<div class="row"><button id="go">Triage incident</button>
-<button id="blk" style="background:#6b2d2b">Show BLOCKED demo</button>
-<span id="st" style="color:var(--mut);align-self:center"></span></div>
+<div class="row">
+  <label class="mode"><input type="checkbox" id="review" checked> Review mode — approve each step (human-in-the-loop)</label>
+</div>
+<div class="row">
+  <button id="go">Triage incident</button>
+  <button id="blk" style="background:#6b2d2b">Show BLOCKED demo</button>
+  <span id="st" style="color:var(--mut);align-self:center"></span>
+</div>
 <div id="out"></div>
 <script>
 const $=s=>document.querySelector(s);
+const C=()=>$('#review').checked;
+function panel(c){ if(!c){$('#cp-main').textContent='—';return;}
+  $('#cp-main').textContent = (c.all_contained?'✓ ':'✗ ') + c.tests_passed + '/' + c.tests_total;
+  $('#cp-runs').textContent=c.runs; $('#cp-guard').textContent=c.guard_blocked;
+  $('#cp-rej').textContent=c.rejected_by_operator; $('#cp-caught').textContent=c.egress_attempts_caught;
+  $('#cp-esc').textContent=c.escapes; $('#cp-esc').style.color = c.escapes? 'var(--bad)':'var(--ok)'; }
 $('#go').onclick=async()=>{
   const t=$('#t').value.trim(); if(!t)return;
   $('#go').disabled=true; $('#st').textContent='working…'; $('#out').innerHTML='';
-  const r=await (await fetch('/api/incidents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})})).json();
-  let cur=r.id;
-  for(let i=0;i<8;i++){
+  const mode=C()?'review':'auto';
+  const r=await (await fetch('/api/incidents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,mode})})).json();
+  let cur=r.id, guard=0;
+  while(guard++<12){
     const s=await (await fetch(`/api/incidents/${cur}/triage`,{method:'POST'})).json();
+    if(s.error){ $('#st').textContent='error: '+s.error; break; }
+    if(s.status==='awaiting_approval'){ panel(s.containment); render(s, s.pending, cur); $('#go').disabled=false; return; }
     const inc=await (await fetch(`/api/incidents/${cur}`)).json();
-    render(inc);
-    if(inc.status==='done'||inc.status==='error'){ $('#st').textContent='status: '+inc.status; break; }
+    panel(inc.containment||s.containment); render(inc, null, cur);
+    if(['done','error','blocked','blocked-cycle','steps-exhausted'].includes(inc.status)){ $('#st').textContent='status: '+inc.status; break; }
   }
   $('#go').disabled=false;
 };
+async function approve(dec, cur){
+  const s=await (await fetch(`/api/incidents/${cur}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:dec})})).json();
+  if(s.error){ $('#st').textContent='error: '+s.error; $('#go').disabled=false; return; }
+  panel(s.containment); render(s, s.pending, cur);
+  if(s.status==='awaiting_approval') return;
+  $('#st').textContent='status: '+s.status; $('#go').disabled=false;
+}
 $('#blk').onclick=async()=>{
   $('#blk').disabled=true; $('#st').textContent='running static guard…'; $('#out').innerHTML='';
   const r=await (await fetch('/api/demo/blocked',{method:'POST'})).json();
   if(r.status!=='blocked-demo') throw new Error(r.detail||r.error);
   const inc=await (await fetch(`/api/incidents/${r.id}`)).json();
-  render(inc);
+  panel(inc.containment); render(inc, null, r.id);
   $('#st').textContent='state: blocked-demo — snippet contained before execution';
   $('#blk').disabled=false;
 };
-function render(inc){
+$('#selftest').onclick=async()=>{
+  const b=$('#selftest'); b.disabled=true;
+  const r=await (await fetch('/api/containment/selftest',{method:'POST'})).json();
+  const box=$('#selftest-out'); box.style.display='';
+  box.innerHTML=`<div class="step ${r.all_passed?'':'approve'}"><h3>Containment self-test — ${r.all_passed?'✓ ALL PASSED':'✗ FAILURES'}
+     <span class="badge ${r.all_passed?'ok':'bad'}">${r.passed}/${r.total}</span></h3>
+     <table><tr><th>case</th><th>result</th><th>metrics</th></tr>`+
+     r.cases.map(c=>`<tr><td>${esc(c.name)}</td><td>${esc(c.result)} <span class="badge ${c.verdict==='PASS'?'ok':'bad'}">${c.verdict}</span></td>
+     <td>${c.metrics?JSON.stringify(c.metrics):'—'}</td></tr>`).join('')+'</table></div>';
+  b.disabled=false;
+};
+function render(inc, pending, cur){
+  const ap = pending?`<div class="step approve"><h3>⏸ Awaiting your approval — ${esc(pending.title)}</h3>
+     <div style="color:var(--mut);font-size:12px">This snippet has NOT run yet. It will execute inside the sealed sandbox (audited, canary-trapped).</div>
+     <pre>${esc(pending.snippet)}</pre>
+     <div class="btns"><button onclick='approve("run","${cur}")'>▶ Run</button>
+     <button onclick='approve("reject","${cur}")' class="reject">✕ Reject</button></div></div>`:'';
   $('#out').innerHTML=
     '<div class="step"><h3>Incident input</h3><pre>'+esc(inc.text)+'</pre></div>'+
-    inc.steps.map((s,i)=>`<div class="step"><h3>${i+1}. ${esc(s.title||'step')} <span class="badge ${s.violated?'bad':'ok'}">${s.violated?'BLOCKED · contained':'exit '+s.exit_code}</span><span style="color:var(--mut);font-weight:400;font-size:11px;margin-left:8px">${s.duration_s}s</span></h3><pre>${esc(s.output)}</pre><details><summary>${s.violated?'snippet (blocked before execution — never ran)':'snippet (ran in sandbox)'}</summary><pre>${esc(s.snippet)}</pre></details></div>`).join('')+
+    ap +
+    (inc.steps||[]).map((s,i)=>`<div class="step"><h3>${i+1}. ${esc(s.title||'step')} ${
+        s.rejected?'<span class="badge warn">REJECTED · operator</span>':
+        s.violated?'<span class="badge bad">BLOCKED · contained before run</span>':
+        `<span class="badge ok">exit ${s.exit_code}</span>`}${
+        s.metrics?` <span class="badge ok">contained · canary 0 · net ${s.metrics.network_attempts||0} caught</span>`:''}
+        <span style="color:var(--mut);font-weight:400;font-size:11px;margin-left:8px">${s.duration_s}s</span></h3>
+        <pre>${esc(s.output)}</pre>
+        <details><summary>${s.rejected?'snippet (never ran — operator rejected)':s.violated?'snippet (blocked before execution — never ran)':'snippet (ran in sandbox, audited)'}</summary><pre>${esc(s.snippet)}</pre></details></div>`).join('')+
     (inc.report?`<div class="step rep"><h3>Triage report</h3>${sec('Findings',inc.report.findings)}${sec('Root cause hypotheses',inc.report.root_cause_hypotheses)}${sec('Recommendations',inc.report.recommendations)}</div>`:'');
 }
 const sec=(t,a)=>a&&a.length?`<h3>${t}</h3><ul>${a.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>`:'';
