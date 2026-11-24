@@ -122,7 +122,7 @@ def plan_first(incident_text: str) -> dict:
     ])
 
 
-def continue_triage(incident_text: str, history: list[dict]) -> dict:
+def continue_triage(incident_text: str, history: list[dict], final: bool = False) -> dict:
     """Шаг с историей исполнения. history — [{title, output, exit_code, snippets?}]."""
     lines = []
     for h in history:
@@ -143,7 +143,7 @@ def continue_triage(incident_text: str, history: list[dict]) -> dict:
 
 def finalize(incident_text: str, history: list[dict]) -> dict:
     """Финальный отчёт триажа из накопленной истории."""
-    msg = continue_triage(incident_text, history)
+    msg = continue_triage(incident_text, history, final=True)
     if msg.get("action") != "done":
         msg["action"] = "done"
     return msg

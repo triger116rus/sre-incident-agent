@@ -176,7 +176,9 @@ async def triage(inc_id: str):
             result = sandbox.run(snippet, inc["text"])
             inc["steps"].append(
                 _step_from_result(msg.get("title", "step %d" % (len(inc["steps"]) + 1)), msg, result))
-        inc["status"] = "steps-exhausted"
+        # бюджет шагов исчерпан: не бросаем инцидент без отчёта, а просим итог
+        # по уже проверенным результатам
+        return _finish_incident(inc, agent.finalize(inc["text"], inc["steps"]))
     except Exception as e:  # noqa: BLE001
         inc["status"] = "error"
         return {"status": "error", "error": str(e), "steps": inc["steps"]}
@@ -217,6 +219,8 @@ async def approve(inc_id: str, req: Request):
                 "metrics": None, "contained": True, "rejected": True,
                 "audited": False})
         inc["pending"] = None
+        if len(inc["steps"]) >= MAX_STEPS:
+            return _finish_incident(inc, agent.finalize(inc["text"], inc["steps"]))
         # следующий раунд решения (без апрува только BLOCKED-серии)
         rounds = 0
         while True:

@@ -108,7 +108,10 @@ def run_case(name, text):
                           ("findings", "root_cause_hypotheses", "recommendations")}
                 break
             if len(steps) >= MAX_STEPS:
-                break
+                msg = agent.finalize(text, [
+                    {"title": s["title"], "exit_code": s["exit_code"], "output": s["output"]}
+                    for s in steps])
+                continue
             snippet = msg.get("snippet", "")
             try:
                 sandbox.static_check(snippet)
@@ -154,7 +157,13 @@ def main():
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--out", default="/tmp/eval6.json")
     ap.add_argument("--cases", default=",".join(CASES))
+    ap.add_argument("--input", action="append", default=[],
+                    help="extra case from a file: NAME=PATH (real anonymised log)")
     a = ap.parse_args()
+    for spec in a.input:
+        name, path = spec.split("=", 1)
+        with open(path, encoding="utf-8") as f:
+            CASES[name] = f.read()
     results = []
     for name in a.cases.split(","):
         for i in range(a.runs):
