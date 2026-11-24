@@ -12,6 +12,7 @@
 """
 import os
 import time
+import uuid
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -80,12 +81,20 @@ def _containment_summary(inc: dict) -> dict:
             "all_contained": escapes == 0}
 
 
+def _report_verified(steps: list[dict]) -> bool:
+    """Отчёт «проверен», только если хотя бы один шаг реально исполнился в
+    песочнице с exit 0. Правило в коде, а не в промте: если песочница
+    недоступна, модель может пересказать лог, но отчёт будет помечен."""
+    return any(s.get("metrics") is not None and s.get("exit_code") == 0 for s in steps)
+
+
 def _finish_incident(inc: dict, msg: dict) -> dict:
     inc["status"] = "done"
     inc["report"] = {
         "findings": msg.get("findings", []),
         "root_cause_hypotheses": msg.get("root_cause_hypotheses", []),
         "recommendations": msg.get("recommendations", []),
+        "verified": _report_verified(inc["steps"]),
     }
     inc["containment"] = _containment_summary(inc)
     return {"status": "done", "report": inc["report"], "steps": inc["steps"],
@@ -153,10 +162,12 @@ async def triage(inc_id: str):
                             "steps": inc["steps"], "containment": blocked}
                 continue
             if inc["mode"] == "review":
-                inc["pending"] = {"title": msg.get("title", "step"), "snippet": snippet}
+                inc["pending"] = {"id": uuid.uuid4().hex[:12],
+                                  "title": msg.get("title", "step"), "snippet": snippet}
                 inc["status"] = "awaiting_approval"
                 return {"status": "awaiting_approval",
-                        "pending": {"title": inc["pending"]["title"],
+                        "pending": {"id": inc["pending"]["id"],
+                                    "title": inc["pending"]["title"],
                                     "snippet": snippet},
                         "steps": inc["steps"],
                         "containment": _containment_summary(inc)}
@@ -189,6 +200,11 @@ async def approve(inc_id: str, req: Request):
         raise HTTPException(409, "нет шага в ожидании апрува")
     if decision not in ("run", "reject"):
         raise HTTPException(400, "decision: run|reject")
+    # Идемпотентность: решение относится к конкретной карточке. Повторный клик
+    # (или клик по устаревшей карточке) не должен утвердить следующий шаг,
+    # которого человек ещё не видел.
+    if body.get("pending_id") != pending.get("id"):
+        raise HTTPException(409, "stale approval: this step was already decided")
     try:
         if decision == "run":
             result = sandbox.run(pending["snippet"], inc["text"])
@@ -222,10 +238,12 @@ async def approve(inc_id: str, req: Request):
                     return {"status": "blocked", "steps": inc["steps"],
                             "containment": _containment_summary(inc)}
                 continue
-            inc["pending"] = {"title": msg.get("title", "step"), "snippet": snippet}
+            inc["pending"] = {"id": uuid.uuid4().hex[:12],
+                                  "title": msg.get("title", "step"), "snippet": snippet}
             inc["status"] = "awaiting_approval"
             return {"status": "awaiting_approval",
-                    "pending": {"title": inc["pending"]["title"], "snippet": snippet},
+                    "pending": {"id": inc["pending"]["id"],
+                                "title": inc["pending"]["title"], "snippet": snippet},
                     "steps": inc["steps"],
                     "containment": _containment_summary(inc)}
     except Exception as e:  # noqa: BLE001

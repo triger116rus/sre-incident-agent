@@ -82,17 +82,23 @@ $('#go').onclick=async()=>{
   while(guard++<12){
     const s=await (await fetch(`/api/incidents/${cur}/triage`,{method:'POST'})).json();
     if(s.error){ $('#st').textContent='error: '+s.error; break; }
-    if(s.status==='awaiting_approval'){ panel(s.containment); render(s, s.pending, cur); $('#go').disabled=false; return; }
+    if(s.status==='awaiting_approval'){ const inc=await (await fetch(`/api/incidents/${cur}`)).json(); panel(s.containment||inc.containment); render(inc, s.pending, cur); $('#go').disabled=false; return; }
     const inc=await (await fetch(`/api/incidents/${cur}`)).json();
     panel(inc.containment||s.containment); render(inc, null, cur);
     if(['done','error','blocked','blocked-cycle','steps-exhausted'].includes(inc.status)){ $('#st').textContent='status: '+inc.status; break; }
   }
   $('#go').disabled=false;
 };
-async function approve(dec, cur){
-  const s=await (await fetch(`/api/incidents/${cur}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:dec})})).json();
+async function approve(dec, cur, pid, btn){
+  // один клик = одно решение: обе кнопки карточки блокируются сразу
+  if(btn) btn.closest('.btns').querySelectorAll('button').forEach(b=>b.disabled=true);
+  const resp=await fetch(`/api/incidents/${cur}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:dec,pending_id:pid})});
+  const s=await resp.json();
+  if(resp.status===409){ $('#st').textContent='this step was already decided'; return; }
   if(s.error){ $('#st').textContent='error: '+s.error; $('#go').disabled=false; return; }
-  panel(s.containment); render(s, s.pending, cur);
+  panel(s.containment);
+  const inc=await (await fetch(`/api/incidents/${cur}`)).json();
+  render(inc, s.pending, cur);
   if(s.status==='awaiting_approval') return;
   $('#st').textContent='status: '+s.status; $('#go').disabled=false;
 }
@@ -120,8 +126,8 @@ function render(inc, pending, cur){
   const ap = pending?`<div class="step approve"><h3>⏸ Awaiting your approval — ${esc(pending.title)}</h3>
      <div style="color:var(--mut);font-size:12px">This snippet has NOT run yet. It will execute inside the sealed sandbox (audited, canary-trapped).</div>
      <pre>${esc(pending.snippet)}</pre>
-     <div class="btns"><button onclick='approve("run","${cur}")'>▶ Run</button>
-     <button onclick='approve("reject","${cur}")' class="reject">✕ Reject</button></div></div>`:'';
+     <div class="btns"><button onclick='approve("run","${cur}","${pending.id}",this)'>▶ Run</button>
+     <button onclick='approve("reject","${cur}","${pending.id}",this)' class="reject">✕ Reject</button></div></div>`:'';
   $('#out').innerHTML=
     '<div class="step"><h3>Incident input</h3><pre>'+esc(inc.text)+'</pre></div>'+
     ap +
@@ -133,7 +139,7 @@ function render(inc, pending, cur){
         <span style="color:var(--mut);font-weight:400;font-size:11px;margin-left:8px">${s.duration_s}s</span></h3>
         <pre>${esc(s.output)}</pre>
         <details><summary>${s.rejected?'snippet (never ran — operator rejected)':s.violated?'snippet (blocked before execution — never ran)':'snippet (ran in sandbox, audited)'}</summary><pre>${esc(s.snippet)}</pre></details></div>`).join('')+
-    (inc.report?`<div class="step rep"><h3>Triage report</h3>${sec('Findings',inc.report.findings)}${sec('Root cause hypotheses',inc.report.root_cause_hypotheses)}${sec('Recommendations',inc.report.recommendations)}</div>`:'');
+    (inc.report?`<div class="step rep"><h3>Triage report</h3>${inc.report.verified===false?'<div class="badge bad" style="display:block;margin:6px 0;padding:6px 10px">UNVERIFIED — no diagnostic step executed successfully; findings below come from reading the log, not from executed code</div>':''}${sec('Findings',inc.report.findings)}${sec('Root cause hypotheses',inc.report.root_cause_hypotheses)}${sec('Recommendations',inc.report.recommendations)}</div>`:'');
 }
 const sec=(t,a)=>a&&a.length?`<h3>${t}</h3><ul>${a.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>`:'';
 const esc=s=>(s+'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
