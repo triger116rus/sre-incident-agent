@@ -122,6 +122,14 @@ def plan_first(incident_text: str) -> dict:
     ])
 
 
+FINAL_INSTRUCTION = (
+    "\n\nSTEP BUDGET EXHAUSTED: do not propose another snippet. Reply now with "
+    "action \"done\" and a non-empty final report (findings, root_cause_hypotheses, "
+    "recommendations) built from the verified results above; say what remains "
+    "unverified."
+)
+
+
 def continue_triage(incident_text: str, history: list[dict], final: bool = False) -> dict:
     """Шаг с историей исполнения. history — [{title, output, exit_code, snippets?}]."""
     lines = []
@@ -136,6 +144,7 @@ def continue_triage(incident_text: str, history: list[dict], final: bool = False
             "content": (
                 f"ALERT / LOG:\n```\n{incident_text}\n```\n\n"
                 "VERIFIED EXECUTION RESULTS so far:\n" + "\n".join(lines)
+                + (FINAL_INSTRUCTION if final else "")
             ),
         },
     ])
@@ -147,3 +156,23 @@ def finalize(incident_text: str, history: list[dict]) -> dict:
     if msg.get("action") != "done":
         msg["action"] = "done"
     return msg
+
+REPORT_KEYS = ("findings", "root_cause_hypotheses", "recommendations")
+
+
+def ensure_report(incident_text: str, history: list[dict], msg: dict) -> dict:
+    """Финальный отчёт не должен быть пустым. Пустой «done» — один повтор
+    через finalize; если и он пуст — явная пометка, а не тихий пустой отчёт."""
+    if any(msg.get(k) for k in REPORT_KEYS):
+        return msg
+    retry = finalize(incident_text, history)
+    if any(retry.get(k) for k in REPORT_KEYS):
+        return retry
+    return {
+        "action": "done",
+        "findings": ["NO REPORT PRODUCED: the model returned an empty final report "
+                     "twice. Review the executed steps above manually."],
+        "root_cause_hypotheses": [],
+        "recommendations": ["Re-run the triage or analyse the step outputs manually."],
+        "empty_report": True,
+    }

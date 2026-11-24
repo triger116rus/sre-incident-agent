@@ -89,12 +89,14 @@ def _report_verified(steps: list[dict]) -> bool:
 
 
 def _finish_incident(inc: dict, msg: dict) -> dict:
+    msg = agent.ensure_report(inc["text"], inc["steps"], msg)
     inc["status"] = "done"
     inc["report"] = {
         "findings": msg.get("findings", []),
         "root_cause_hypotheses": msg.get("root_cause_hypotheses", []),
         "recommendations": msg.get("recommendations", []),
         "verified": _report_verified(inc["steps"]),
+        "empty_report": bool(msg.get("empty_report")),
     }
     inc["containment"] = _containment_summary(inc)
     return {"status": "done", "report": inc["report"], "steps": inc["steps"],

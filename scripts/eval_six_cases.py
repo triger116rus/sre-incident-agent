@@ -103,7 +103,10 @@ def run_case(name, text):
         msg = agent.plan_first(text)
         while True:
             if msg.get("action") == "done":
-                status = "done"
+                msg = agent.ensure_report(text, [
+                    {"title": s["title"], "exit_code": s["exit_code"], "output": s["output"]}
+                    for s in steps], msg)
+                status = "done" if not msg.get("empty_report") else "empty-report"
                 report = {k: msg.get(k, []) for k in
                           ("findings", "root_cause_hypotheses", "recommendations")}
                 break
